@@ -1171,10 +1171,14 @@ textarea.q-input{resize:vertical;min-height:80px;}
     </div>
   </div>
 
-  <button class="btn-generate" onclick="generateFeedback()">✦ Gerar Resumo para WhatsApp</button>
+  <button class="btn-generate" onclick="generateFeedback()">✦ Gerar e Salvar Feedback</button>
   <div class="fb-result" id="fb-result">
+    <div id="fb-save-status" style="display:none;background:rgba(80,200,80,0.12);border:1px solid rgba(80,200,80,0.35);border-radius:6px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#7dd87d;letter-spacing:0.5px;">✅ Feedback salvo! O treinador será notificado.</div>
     <div class="fb-result-text" id="fb-result-text"></div>
-    <button class="btn-copy" onclick="copyFeedback()">📋 Copiar texto</button>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="btn-copy" onclick="copyFeedback()">📋 Copiar texto</button>
+      <button class="btn-copy" id="btn-whatsapp-fb" onclick="sendFeedbackWhatsapp()" style="background:linear-gradient(135deg,#25d366,#128c7e);border-color:#25d366;">📲 Enviar pelo WhatsApp</button>
+    </div>
   </div>
 
 </section></div>
@@ -1854,10 +1858,44 @@ ${obsGeral}
 `;
   txt += `
 ━━━━━━━━━━━━━━━━━━━━━━━
-Enviado via Portal Consultoria LB — Fulano de Tal`;
+Enviado via Portal Consultoria LB`;
   document.getElementById('fb-result-text').textContent = txt;
   document.getElementById('fb-result').classList.add('show');
   document.getElementById('fb-result').scrollIntoView({behavior:'smooth'});
+  // Salvar no Firebase automaticamente
+  saveFeedbackToFirebase(txt, peso);
+}
+async function saveFeedbackToFirebase(txt, peso) {
+  const statusEl = document.getElementById('fb-save-status');
+  const ts = Date.now();
+  const isoNow = new Date().toISOString();
+  const payload = {
+    text: txt,
+    answers: {...fbAnswers},
+    peso: peso || null,
+    sentAt: isoNow,
+    ts
+  };
+  try {
+    // Salva o feedback completo na subcoleção
+    await setDoc(doc(db, 'clients', CLIENT_ID, 'feedbacks', String(ts)), payload);
+    // Atualiza lastFeedbackDate no documento principal (dashboard lê isso)
+    await setDoc(doc(db, 'clients', CLIENT_ID), {lastFeedbackDate: isoNow}, {merge: true});
+    if(statusEl){ statusEl.style.display='block'; }
+  } catch(e) {
+    // Fallback: salva no localStorage
+    const stored = JSON.parse(localStorage.getItem('feedbacks_' + CLIENT_ID) || '[]');
+    stored.push(payload);
+    localStorage.setItem('feedbacks_' + CLIENT_ID, JSON.stringify(stored));
+    localStorage.setItem('lastFeedbackDate_' + CLIENT_ID, isoNow);
+    if(statusEl){ statusEl.style.display='block'; statusEl.textContent='✅ Feedback salvo localmente (sem conexão).'; }
+    console.log('Firebase indisponível, salvo no localStorage:', e.message);
+  }
+}
+function sendFeedbackWhatsapp() {
+  const txt = document.getElementById('fb-result-text').textContent;
+  if(!txt.trim()){ return; }
+  window.open('https://wa.me/5527995084354?text=' + encodeURIComponent(txt), '_blank');
 }
 function copyFeedback() {
   const txt = document.getElementById('fb-result-text').textContent;
